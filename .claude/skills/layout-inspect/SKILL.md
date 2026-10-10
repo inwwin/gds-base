@@ -1,12 +1,12 @@
 ---
 name: layout-inspect
-description: Render and check a gdsfactory component or GDS cell with KLayout during layout work. It writes PNG views with port arrows, µm axes and a layer legend, prints a precise summary (ports, per-layer area/bbox, cross-section cuts), runs width/space/port/grid checks, and diffs against the previous run. Use it whenever you create or change a component, to see the geometry, confirm dimensions and verify that an edit did only what you intended.
+description: Render and check a gdsfactory component, GDS cell or path with KLayout during layout work, optionally overlaying custom paths (routes, bends) on top. It writes PNG views with port arrows, µm axes and a layer legend, prints a precise summary (ports, per-layer area/bbox, cross-section cuts), runs width/space/port/grid checks, and diffs against the previous run. Use it whenever you create or change a component, to see the geometry, confirm dimensions and verify that an edit did only what you intended.
 ---
 
 # layout-inspect
 
-`scripts/inspect_layout.py` is the eyes of the component-design loop. It talks to
-KLayout directly (no matplotlib). Every run writes a GDS plus images into one output
+`scripts/inspect_layout.py` is the eyes of the component-design loop. It renders with
+KLayout directly; matplotlib only adds the axes and legend around those pixels. Every run writes a GDS plus images into one output
 directory and prints a summary you can trust more than the picture.
 
 ```bash
@@ -20,6 +20,7 @@ pixi run inspect-layout SOURCE [OPTIONS]
 | `file.py:func` (+ `--kwargs` JSON) | `pixi run inspect-layout src/ring.py:ring --kwargs '{"radius": 10}'` |
 | `.gds` file (+ `--cell NAME`) | `pixi run inspect-layout build/chip.gds --cell top` |
 | gf expression | `pixi run inspect-layout "gf.components.mmi1x2(width_mmi=3)"` |
+| bare path(s) | `pixi run inspect-layout "gf.path.euler(radius=10, angle=90)"` |
 
 The generic PDK is activated first. Pass `--pdk package.PDK` to use another PDK; a
 `file.py` source may also activate its own PDK when it is imported.
@@ -39,6 +40,28 @@ The generic PDK is activated first. Pass `--pdk package.PDK` to use another PDK;
    geometry moved. Reruns go to the same output directory, which keeps the
    previous GDS as `layout.prev.gds`. The summary lists added/removed area per layer
    and port changes, and `diff.png` marks added (green) and removed (red) geometry.
+
+## Overlaying paths
+
+Use `--path SPEC` (repeatable) to draw centrelines on top of the component. Use it
+to plan a route between ports, design an euler/spline bend, or compare against a
+reference trajectory. SPEC is one of:
+
+- an expression with `gf`, `np` and `c` (the loaded component) in scope:
+  `--path 'gf.path.euler(radius=10).move(c.ports["o2"].center)'`
+- `file.py:func` returning a `gf.Path` or a list of them
+- a point list: `--path "0,0;5,5;10,0"`
+
+Each path is drawn as a coloured line with a cross at its start and a labelled
+arrow at its end. The summary gives its length, start/end point and heading, its
+minimum bend radius (estimated from the discretised points), and the number of
+sharp corners (turns over 5° at a single vertex).
+
+**Quoting:** `pixi run` re-parses its arguments and drops single quotes *inside*
+an argument. So write string literals inside expressions with double quotes and
+wrap the whole argument in single quotes, as in `c.ports["o2"]` above. Calling the
+script with `pixi run python .claude/skills/layout-inspect/scripts/inspect_layout.py`
+avoids the problem altogether.
 
 ## Options worth knowing
 

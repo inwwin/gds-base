@@ -15,6 +15,12 @@ SOURCE is one of:
   (``--kwargs '{"gap": 0.2}'``). A module-level Component is also accepted.
 * ``path/to/file.gds``      - load a GDS cell (``--cell NAME``, default: top cell)
 * ``gf.components.mmi1x2()`` - a Python expression evaluated with ``gf`` in scope
+* a bare ``gf.Path`` (or list of paths), e.g. ``gf.path.euler(radius=10)`` - drawn on its own
+
+``--path SPEC`` (repeatable) overlays centrelines on the component and reports their
+length, end points/headings, minimum bend radius and sharp corners. SPEC is an
+expression with ``gf``, ``np`` and ``c`` (the loaded component) in scope, a
+``file.py:func`` returning path(s), or a point list ``"x0,y0;x1,y1;..."``.
 
 Every run writes into ``--out`` (default ``build/inspect/<name>/``):
 
@@ -33,6 +39,8 @@ Examples:
     pixi run inspect-layout "gf.components.coupler(gap=0.2)" --cut 0,-2,0,2
     pixi run inspect-layout my_pkg/ring.py:ring --kwargs '{"radius": 10}' \\
         --check --min-width 0.3 --min-space 0.2 --diff last
+    pixi run inspect-layout "gf.components.mmi1x2()" \\
+        --path 'gf.path.euler(radius=10).move(c.ports["o2"].center)'
 """
 
 from __future__ import annotations
@@ -68,6 +76,9 @@ IGNORE_ANGLE = 80
 COLOR_VIOLATION = 0xFF0000
 COLOR_ADDED = 0x00B000
 COLOR_REMOVED = 0xFF0000
+# Overlay paths cycle through these; chosen to differ from the marker and port colours.
+PATH_COLORS = (0xD000D0, 0xFF8000, 0x008C8C, 0x7030A0, 0x808000)
+SHARP_CORNER_DEG = 5.0  # a turn this large at a single vertex is a corner, not a discretised curve
 
 
 @dataclass
@@ -111,11 +122,42 @@ class MarkerSet:
 
 
 @dataclass
+class PathInfo:
+    """A path drawn over the layout as a centreline, with its key numbers."""
+
+    label: str
+    spec: str
+    color: int
+    points: list[tuple[float, float]]
+    length: float
+    start: tuple[float, float, float]  # x, y, heading in degrees
+    end: tuple[float, float, float]
+    min_radius: float | None
+    sharp_corners: int
+
+    def summary(self) -> dict[str, Any]:
+        xs = [x for x, _ in self.points]
+        ys = [y for _, y in self.points]
+        return {
+            "label": self.label,
+            "spec": self.spec,
+            "points": len(self.points),
+            "length": round(self.length, 4),
+            "start": [round(v, 4) for v in self.start],
+            "end": [round(v, 4) for v in self.end],
+            "min_radius": round(self.min_radius, 4) if self.min_radius is not None else None,
+            "sharp_corners": self.sharp_corners,
+            "bbox": [round(min(xs), 4), round(min(ys), 4), round(max(xs), 4), round(max(ys), 4)],
+        }
+
+
+@dataclass
 class Target:
     """The cell under inspection, independent of where it came from."""
 
     name: str
     kcell: Any  # kfactory ProtoTKCell (gf.Component or kf.KCell)
+    source_paths: list[Any] = field(default_factory=list)  # set when SOURCE was a bare path
 
     @property
     def layout(self) -> Any:
@@ -221,11 +263,11 @@ def load_target(source: str, kwargs: dict[str, Any], cell_name: str | None) -> T
         obj = obj(**kwargs)
     elif kwargs:
         raise click.ClickException("--kwargs needs an expression that evaluates to a callable")
-    match = re.match(r"\s*(?:gf\.)?(?:components\.)?(\w+)", source)
+    match = re.match(r"\s*(?:gf\.)?(?:components\.|path\.)?(\w+)", source)
     return _as_target(obj, match.group(1) if match else None)
 
 
-def _load_python(path: Path, func_name: str, kwargs: dict[str, Any]) -> Target:
+def _import_attr(path: Path, attr: str) -> Any:
     path = path.resolve()
     sys.path.insert(0, str(path.parent))
     module_name = f"_inspect_{path.stem}_{uuid.uuid4().hex[:8]}"
@@ -238,9 +280,13 @@ def _load_python(path: Path, func_name: str, kwargs: dict[str, Any]) -> Target:
         spec.loader.exec_module(module)
     except Exception as exc:
         raise click.ClickException(f"importing {path} failed: {exc!r}") from exc
-    if not hasattr(module, func_name):
-        raise click.ClickException(f"{path} has no attribute {func_name!r}")
-    obj = getattr(module, func_name)
+    if not hasattr(module, attr):
+        raise click.ClickException(f"{path} has no attribute {attr!r}")
+    return getattr(module, attr)
+
+
+def _load_python(path: Path, func_name: str, kwargs: dict[str, Any]) -> Target:
+    obj = _import_attr(path, func_name)
     if callable(obj):
         try:
             obj = obj(**kwargs)
@@ -255,6 +301,10 @@ def _as_target(obj: Any, name: str | None) -> Target:
     import gdsfactory as gf
     import kfactory as kf
 
+    if _paths_in(obj) is not None:
+        empty = gf.Component()
+        empty.name = f"paths_{_short_name(name or 'path')}"
+        return Target(name=_short_name(name or "path"), kcell=empty, source_paths=_paths_in(obj) or [])
     if isinstance(obj, gf.ComponentAllAngle):
         flat = gf.Component()
         flat.name = obj.name
@@ -293,6 +343,95 @@ def _read_gds(path: Path, cell_name: str | None) -> Any:
 def _load_gds(path: Path, cell_name: str | None) -> Target:
     kcell = _read_gds(path, cell_name)
     return Target(name=_short_name(kcell.name), kcell=kcell)
+
+
+# --------------------------------------------------------------------------
+# Overlay paths
+# --------------------------------------------------------------------------
+
+
+def _paths_in(obj: Any) -> list[Any] | None:
+    """The path-like objects in obj (a path or a list of them), or None."""
+    import kfactory as kf
+
+    def is_path(o: Any) -> bool:
+        return hasattr(o, "points") and not isinstance(o, kf.ProtoTKCell)
+
+    if is_path(obj):
+        return [obj]
+    if isinstance(obj, (list, tuple)) and obj and all(is_path(o) for o in obj):
+        return list(obj)
+    return None
+
+
+def _resolve_path_spec(spec: str, target: Target) -> list[Any]:
+    import gdsfactory as gf
+    import numpy as np
+
+    if ";" in spec and re.fullmatch(r"[\s0-9eE.+\-,;]+", spec):
+        try:
+            points = [tuple(float(v) for v in pt.split(",")) for pt in spec.split(";") if pt.strip()]
+        except ValueError as exc:
+            raise click.ClickException(f"--path {spec!r}: bad point list ({exc})") from exc
+        if len(points) < 2 or any(len(pt) != 2 for pt in points):
+            raise click.ClickException(f"--path {spec!r}: needs at least two x,y points separated by ';'")
+        return [gf.Path(points)]
+
+    path_part, sep, attr = spec.rpartition(":")
+    if sep and path_part.endswith(".py") and Path(path_part).is_file():
+        obj = _import_attr(Path(path_part), attr)
+        if callable(obj):
+            obj = obj()
+    else:
+        try:
+            obj = eval(spec, {"gf": gf, "np": np, "c": target.kcell})  # local developer tool
+        except Exception as exc:
+            raise click.ClickException(f"--path {spec!r} failed to evaluate: {exc!r}") from exc
+    paths = _paths_in(obj)
+    if paths is None:
+        raise click.ClickException(f"--path {spec!r} did not produce a path (got {type(obj).__name__})")
+    return paths
+
+
+def path_info(obj: Any, label: str, spec: str, color: int) -> PathInfo:
+    """Length, end headings and curvature measured from the path's points."""
+    raw = [(float(x), float(y)) for x, y in obj.points]
+    # Drop repeated points so every segment has a direction.
+    points = [raw[0]] + [b for a, b in itertools.pairwise(raw) if b != a]
+    if len(points) < 2:
+        raise click.ClickException(f"{label} ({spec}) has fewer than two distinct points")
+    segs = [(b[0] - a[0], b[1] - a[1]) for a, b in itertools.pairwise(points)]
+    lens = [math.hypot(dx, dy) for dx, dy in segs]
+    heads = [math.atan2(dy, dx) for dx, dy in segs]
+    min_radius, corners = None, 0
+    for i, (h0, h1) in enumerate(itertools.pairwise(heads)):
+        turn = abs((h1 - h0 + math.pi) % (2 * math.pi) - math.pi)
+        if turn > math.radians(SHARP_CORNER_DEG):
+            corners += 1
+        elif turn > 1e-9:
+            radius = (lens[i] + lens[i + 1]) / 2 / turn
+            min_radius = radius if min_radius is None else min(min_radius, radius)
+    return PathInfo(
+        label=label,
+        spec=spec,
+        color=color,
+        points=points,
+        length=sum(lens),
+        # Prefer the path's own end angles (exact for gf.Path) over the first/last segment's.
+        start=(*points[0], float(getattr(obj, "start_angle", math.degrees(heads[0]))) % 360),
+        end=(*points[-1], float(getattr(obj, "end_angle", math.degrees(heads[-1]))) % 360),
+        min_radius=min_radius,
+        sharp_corners=corners,
+    )
+
+
+def load_paths(specs: Sequence[str], target: Target, source: str) -> list[PathInfo]:
+    objs = [(source, o) for o in target.source_paths]
+    for spec in specs:
+        objs += [(spec, o) for o in _resolve_path_spec(spec, target)]
+    return [
+        path_info(o, f"path {i}", spec, PATH_COLORS[(i - 1) % len(PATH_COLORS)]) for i, (spec, o) in enumerate(objs, 1)
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -751,15 +890,31 @@ class Renderer:
             it.next()
         self.visible = [by_key[k] for k in sorted(visible_keys) if k in by_key]
         self.marker_sets: list[MarkerSet] = []
+        self.paths: list[PathInfo] = []  # drawn on every view, whatever marker_sets holds
         self._live: list[Any] = []
 
     # -- scene objects ------------------------------------------------------
 
-    def _ports(self, ports: list[PortInfo], um_per_px: float, box: Any) -> None:
+    def _annotations(self, ports: list[PortInfo], um_per_px: float, box: Any) -> None:
         import klayout.db as kdb
         from klayout import lay
 
         self.view.clear_annotations()
+        for pi in self.paths:
+            # Cross at the start, labelled arrow continuing the path past its end.
+            for (x, y, heading), style, length, text in (
+                (pi.start, lay.Annotation.StyleCrossStart, 12, ""),
+                (pi.end, lay.Annotation.StyleArrowEnd, 30, pi.label),
+            ):
+                a = math.radians(heading)
+                ann = lay.Annotation()
+                ann.p1 = kdb.DPoint(x, y)
+                ann.p2 = kdb.DPoint(x + math.cos(a) * length * um_per_px, y + math.sin(a) * length * um_per_px)
+                ann.style = style
+                ann.outline = lay.Annotation.OutlineDiag
+                ann.fmt = text
+                ann.main_position = lay.Annotation.PositionP2
+                self.view.insert_annotation(ann)
         if not self.show_ports:
             return
         arrow = 45 * um_per_px
@@ -786,6 +941,7 @@ class Renderer:
             self.view.insert_annotation(face)
 
     def _markers(self) -> None:
+        import klayout.db as kdb
         from klayout import lay
 
         for m in self._live:
@@ -801,6 +957,16 @@ class Renderer:
                 marker.dither_pattern = ms.dither
                 marker.halo = 0
                 self._live.append(marker)
+        for pi in self.paths:
+            marker = lay.Marker(self.view)
+            # Width 0 draws a line, so the stroke stays a constant pixel width at any zoom.
+            marker.set_path(kdb.DPath([kdb.DPoint(x, y) for x, y in pi.points], 0))
+            marker.color = pi.color
+            marker.frame_color = pi.color
+            marker.line_width = 2
+            marker.vertex_size = 0
+            marker.halo = 0
+            self._live.append(marker)
 
     # -- output -------------------------------------------------------------
 
@@ -823,22 +989,31 @@ class Renderer:
             c.x - w * um_per_px / 2, c.y - h * um_per_px / 2, c.x + w * um_per_px / 2, c.y + h * um_per_px / 2
         )
 
-        self._ports(ports, um_per_px, box)
+        self._annotations(ports, um_per_px, box)
         self._markers()
         self.view.zoom_box(box)
         raw = path.with_suffix(".raw.png")
         self.view.save_image_with_options(str(raw), w, h, 0, 1, 0, box, False)  # oversampling greys out stipples
-        _decorate(raw, path, box, title, self.visible, self.marker_sets)
+        _decorate(raw, path, box, title, self.visible, self.marker_sets, self.paths)
         raw.unlink(missing_ok=True)
         return {"path": str(path), "box": dbox_tuple(box), "um_per_px": round(um_per_px, 6)}
 
 
-def _decorate(raw: Path, out: Path, box: Any, title: str, legend: list[LayerEntry], markers: list[MarkerSet]) -> None:
+def _decorate(
+    raw: Path,
+    out: Path,
+    box: Any,
+    title: str,
+    legend: list[LayerEntry],
+    markers: list[MarkerSet],
+    paths: list[PathInfo],
+) -> None:
     """Frame the KLayout image with µm axes, a title and a legend, keeping its pixels 1:1."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
     from matplotlib.ticker import MaxNLocator
 
@@ -849,6 +1024,7 @@ def _decorate(raw: Path, out: Path, box: Any, title: str, legend: list[LayerEntr
 
     handles = [Patch(facecolor=e.fill, edgecolor=e.frame, label=e.label) for e in legend]
     handles += [Patch(facecolor="none", edgecolor=_hex(m.color), label=m.label) for m in markers if m.polygons]
+    handles += [Line2D([], [], color=_hex(p.color), lw=2, label=p.label) for p in paths]
     full_w = left + w + right
     ncol, legend_h = 1, 0
     if handles:
@@ -939,6 +1115,17 @@ def print_summary(s: dict[str, Any]) -> None:
             if la["gaps"]:
                 echo(f"  {'':<24} gaps: {la['gaps']}")
 
+    if s.get("paths"):
+        echo("\nPaths:")
+        for p in s["paths"]:
+            radius = f"min radius {p['min_radius']} µm" if p["min_radius"] is not None else "straight segments only"
+            corners = f"  sharp corners: {p['sharp_corners']}" if p["sharp_corners"] else ""
+            echo(
+                f"  {p['label']:<7} length {p['length']} µm  start ({p['start'][0]}, {p['start'][1]}) {p['start'][2]:g}°"
+                f"  end ({p['end'][0]}, {p['end'][1]}) {p['end'][2]:g}°  {radius}{corners}"
+            )
+            echo(f"  {'':<7} {p['spec']}")
+
     if "checks" in s:
         ch = s["checks"]
         echo(f"\nChecks    : {'PASS' if ch['passed'] else str(len(ch['issues'])) + ' issue(s)'}")
@@ -995,6 +1182,12 @@ def _port_box(p: PortInfo, radius: float | None) -> Any:
 @click.option("--zoom-ports", "zoom_all_ports", is_flag=True, help="One extra view per port.")
 @click.option("--radius", type=float, help="Half-size in µm of --zoom-port views (default: max(4*width, 2)).")
 @click.option("--cut", "cuts", type=BOX, multiple=True, help="Cross-section line x0,y0,x1,y1 in µm (repeatable).")
+@click.option(
+    "--path",
+    "path_specs",
+    multiple=True,
+    help="Path to overlay (repeatable): expression with gf/np/c in scope, file.py:func, or 'x0,y0;x1,y1;...'.",
+)
 @click.option("--layers", "layer_spec", help="Comma-separated layers to show/analyse, by name or L/D.")
 @click.option(
     "--depth", type=click.IntRange(min=0), help="Child levels drawn; deeper cells as frames (0 = own shapes only)."
@@ -1031,6 +1224,7 @@ def main(
     zoom_all_ports: bool,
     radius: float | None,
     cuts: tuple[tuple[float, float, float, float], ...],
+    path_specs: tuple[str, ...],
     layer_spec: str | None,
     depth: int | None,
     fill: str,
@@ -1071,8 +1265,12 @@ def main(
     if unknown:
         raise click.ClickException(f"unknown port(s) {unknown}; ports are {sorted(port_names)}")
 
+    paths = load_paths(path_specs, target, source)
     renderer = Renderer(target, layers, selected, depth, fill, not no_ports, size)
+    renderer.paths = paths
     summary: dict[str, Any] = {"cell": cell_section(target), "ports": [p.__dict__ for p in ports]}
+    if paths:
+        summary["paths"] = [p.summary() for p in paths]
 
     if run_checks or min_width or min_space or grid:
         checks, markers = checks_section(target, selected, ports, grid, min_width, min_space)
@@ -1092,8 +1290,13 @@ def main(
 
     images = []
     bbox = target.kcell.dbbox()
-    for p in ports:  # ports may sit off the geometry; keep them in view
+    for p in ports:  # ports and overlay paths may sit off the geometry; keep them in view
         bbox += kdb.DPoint(p.x, p.y)
+    for pi in paths:
+        for x, y in pi.points:
+            bbox += kdb.DPoint(x, y)
+    if bbox.empty():
+        bbox = kdb.DBox(-1, -1, 1, 1)
     margin = max(bbox.width(), bbox.height()) * 0.06 + 0.5
     images.append(renderer.render(out / "overview.png", bbox.enlarged(margin, margin), f"{target.kcell.name}", ports))
 
