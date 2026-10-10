@@ -21,9 +21,53 @@ pixi run inspect-layout SOURCE [OPTIONS]
 | `.gds` file (+ `--cell NAME`) | `pixi run inspect-layout build/chip.gds --cell top` |
 | gf expression | `pixi run inspect-layout "gf.components.mmi1x2(width_mmi=3)"` |
 | bare path(s) | `pixi run inspect-layout "gf.path.euler(radius=10, angle=90)"` |
+| script on stdin / script file | `pixi run inspect-layout - <<'EOF' … EOF` or `pixi run inspect-layout build/scratch.py` |
 
 The generic PDK is activated first. Pass `--pdk package.PDK` to use another PDK; a
 `file.py` source may also activate its own PDK when it is imported.
+
+## Inline scripts
+
+When building the component or paths takes more than one expression, write it as a
+script and pipe it in with `-` (or save it and pass `script.py`). The script runs
+first, then the script picks up:
+
+- `component` (or `c`): the cell to inspect;
+- `paths` (optional): a `gf.Path`, a list of them, or a `{label: path}` dict, which
+  gets drawn and measured like `--path` overlays (dict keys become the labels).
+
+`gf` and `np` are pre-imported and the PDK is already active. `__name__` is not
+`"__main__"`, so a trailing `if __name__ == "__main__": c.show()` is harmless.
+Every CLI option still applies:
+
+```bash
+pixi run inspect-layout - --zoom-port o2 --diff last --out build/inspect/router <<'EOF'
+c = gf.Component()
+mmi = c << gf.components.mmi1x2()
+wg = c << gf.components.straight(length=5)
+wg.connect("o1", mmi.ports["o2"])
+c.add_port("o1", port=mmi.ports["o1"])
+c.add_port("o2", port=wg.ports["o2"])
+paths = {"route": gf.path.euler(radius=10).move(c.ports["o2"].center)}
+EOF
+```
+
+- Use a quoted heredoc (`<<'EOF'`) so the shell passes the script through
+  untouched. Quotes inside the script are then safe, unlike in `--path`
+  expressions.
+- Stdin runs default to `build/inspect/script/`. Pass `--out` to keep separate
+  designs, and their `--diff last` history, apart.
+- If the script raises, the error lists the script lines involved.
+
+From Python, `inspect()` takes the same options as keyword arguments (e.g.
+`path_specs=[route]`, `cuts=[(x0, y0, x1, y1)]`, `quiet=True`) and returns the summary
+dict; errors raise `click.ClickException`:
+
+```python
+import sys; sys.path.insert(0, ".claude/skills/layout-inspect/scripts")
+from inspect_layout import inspect
+summary = inspect(c, path_specs=[route], zoom_ports=["o2"], out_dir="build/inspect/dev")
+```
 
 ## The loop
 

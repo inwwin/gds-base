@@ -16,6 +16,9 @@ SOURCE is one of:
 * ``path/to/file.gds``      - load a GDS cell (``--cell NAME``, default: top cell)
 * ``gf.components.mmi1x2()`` - a Python expression evaluated with ``gf`` in scope
 * a bare ``gf.Path`` (or list of paths), e.g. ``gf.path.euler(radius=10)`` - drawn on its own
+* ``-`` (a script on stdin) or ``path/to/script.py`` - run the script, then inspect the
+  ``component`` (or ``c``) it defines, overlaying its ``paths`` (a path, a list, or a
+  ``{label: path}`` dict). ``gf`` and ``np`` are pre-imported; the PDK is already active.
 
 ``--path SPEC`` (repeatable) overlays centrelines on the component and reports their
 length, end points/headings, minimum bend radius and sharp corners. SPEC is an
@@ -41,6 +44,14 @@ Examples:
         --check --min-width 0.3 --min-space 0.2 --diff last
     pixi run inspect-layout "gf.components.mmi1x2()" \\
         --path 'gf.path.euler(radius=10).move(c.ports["o2"].center)'
+    pixi run inspect-layout - --zoom-ports --diff last <<'EOF'
+    c = gf.Component()
+    ...
+    paths = {"route": gf.path.euler(radius=10).move(c.ports["o2"].center)}
+    EOF
+
+From Python, ``inspect(component_or_source, paths=[...], ...)`` takes the same options
+as keyword arguments and returns the summary dict.
 """
 
 from __future__ import annotations
@@ -54,6 +65,7 @@ import re
 import shutil
 import sys
 import tempfile
+import traceback
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -157,7 +169,9 @@ class Target:
 
     name: str
     kcell: Any  # kfactory ProtoTKCell (gf.Component or kf.KCell)
-    source_paths: list[Any] = field(default_factory=list)  # set when SOURCE was a bare path
+    # Paths that came with SOURCE (a bare path, or a script's `paths`): (label or None, path).
+    source_paths: list[tuple[str | None, Any]] = field(default_factory=list)
+    source_label: str = ""  # shown as the spec of those paths
 
     @property
     def layout(self) -> Any:
@@ -243,6 +257,10 @@ def load_target(source: str, kwargs: dict[str, Any], cell_name: str | None) -> T
     path_part, sep, func_name = source.rpartition(":")
     if sep and path_part.endswith(".py") and Path(path_part).is_file():
         return _load_python(Path(path_part), func_name, kwargs)
+    if source == "-" or source.endswith(".py"):
+        if kwargs:
+            raise click.ClickException("--kwargs cannot be used with a script source")
+        return _load_script(source)
     if source.lower().endswith((".gds", ".oas", ".gds.gz")):
         if kwargs:
             raise click.ClickException("--kwargs cannot be used with a GDS source")
@@ -265,6 +283,66 @@ def load_target(source: str, kwargs: dict[str, Any], cell_name: str | None) -> T
         raise click.ClickException("--kwargs needs an expression that evaluates to a callable")
     match = re.match(r"\s*(?:gf\.)?(?:components\.|path\.)?(\w+)", source)
     return _as_target(obj, match.group(1) if match else None)
+
+
+def _load_script(source: str) -> Target:
+    """Run a script (stdin for '-') and pick up the `component`/`c` and `paths` it defines."""
+    import gdsfactory as gf
+    import numpy as np
+
+    if source == "-":
+        code, label, name = sys.stdin.read(), "<stdin>", "script"
+        if not code.strip():
+            raise click.ClickException("SOURCE '-' expects a Python script on stdin, but stdin was empty")
+    else:
+        path = Path(source).resolve()
+        if not path.is_file():
+            raise click.ClickException(f"{source} does not exist")
+        code, label, name = path.read_text(), str(path), path.stem
+        sys.path.insert(0, str(path.parent))
+    # __name__ is not "__main__", so a script's `if __name__ == "__main__": c.show()` stays inert.
+    namespace: dict[str, Any] = {"__name__": "__inspect_script__", "__file__": label, "gf": gf, "np": np}
+    try:
+        exec(compile(code, label, "exec"), namespace)  # local developer tool: running the script is the point
+    except Exception as exc:
+        # Keep only the script's own frames: they are what needs fixing.
+        lines = code.splitlines()
+        where = "".join(
+            f"  line {f.lineno}: {lines[f.lineno - 1].strip() if f.lineno and f.lineno <= len(lines) else ''}\n"
+            for f in traceback.extract_tb(exc.__traceback__)
+            if f.filename == label
+        )
+        raise click.ClickException(f"script {label} raised {exc!r}\n{where}".rstrip()) from exc
+
+    component = namespace.get("component", namespace.get("c"))
+    raw_paths = namespace.get("paths")
+    found: list[tuple[str | None, Any]] = []
+    if isinstance(raw_paths, dict):
+        bad = [k for k, v in raw_paths.items() if _paths_in(v) is None]
+        if bad:
+            raise click.ClickException(f"script {label}: paths[{bad[0]!r}] is not a path")
+        for key, value in raw_paths.items():
+            items = _paths_in(value) or []
+            found += [(str(key) if len(items) == 1 else f"{key}[{i}]", o) for i, o in enumerate(items)]
+    elif raw_paths is not None:
+        items = _paths_in(raw_paths)
+        if items is None:
+            raise click.ClickException(f"script {label}: `paths` must be a path, a list of paths or a dict of them")
+        found = [(None, o) for o in items]
+    if component is None:
+        if not found:
+            raise click.ClickException(f"script {label} must define `component` (or `c`) and/or `paths`")
+        component = gf.Component()
+        component.name = f"paths_{_short_name(name)}"
+    if isinstance(component, gf.Component) and (component.name or "").startswith("Unnamed"):
+        component.name = _short_name(name)
+    try:
+        target = _as_target(component, name)
+    except click.ClickException as exc:
+        raise click.ClickException(f"script {label}: `component`/`c` is not usable ({exc.message})") from exc
+    target.source_paths += found
+    target.source_label = f"{label}: paths"
+    return target
 
 
 def _import_attr(path: Path, attr: str) -> Any:
@@ -304,7 +382,8 @@ def _as_target(obj: Any, name: str | None) -> Target:
     if _paths_in(obj) is not None:
         empty = gf.Component()
         empty.name = f"paths_{_short_name(name or 'path')}"
-        return Target(name=_short_name(name or "path"), kcell=empty, source_paths=_paths_in(obj) or [])
+        found = [(None, o) for o in _paths_in(obj) or []]
+        return Target(name=_short_name(name or "path"), kcell=empty, source_paths=found)
     if isinstance(obj, gf.ComponentAllAngle):
         flat = gf.Component()
         flat.name = obj.name
@@ -425,12 +504,20 @@ def path_info(obj: Any, label: str, spec: str, color: int) -> PathInfo:
     )
 
 
-def load_paths(specs: Sequence[str], target: Target, source: str) -> list[PathInfo]:
-    objs = [(source, o) for o in target.source_paths]
+def load_paths(specs: Sequence[Any], target: Target, source: str) -> list[PathInfo]:
+    """Paths from SOURCE plus each spec (a string spec, or path objects when called from Python)."""
+    objs = [(label, target.source_label or source, o) for label, o in target.source_paths]
     for spec in specs:
-        objs += [(spec, o) for o in _resolve_path_spec(spec, target)]
+        if isinstance(spec, str):
+            objs += [(None, spec, o) for o in _resolve_path_spec(spec, target)]
+        else:
+            items = _paths_in(spec)
+            if items is None:
+                raise click.ClickException(f"paths entry {spec!r} is not a path")
+            objs += [(None, f"<{type(o).__name__} object>", o) for o in items]
     return [
-        path_info(o, f"path {i}", spec, PATH_COLORS[(i - 1) % len(PATH_COLORS)]) for i, (spec, o) in enumerate(objs, 1)
+        path_info(o, label or f"path {i}", spec, PATH_COLORS[(i - 1) % len(PATH_COLORS)])
+        for i, (label, spec, o) in enumerate(objs, 1)
     ]
 
 
@@ -1213,33 +1300,55 @@ def _port_box(p: PortInfo, radius: float | None) -> Any:
     help="Previous GDS to diff against, or 'last' for the previous run in --out.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Print the summary as JSON instead of text.")
-def main(
-    source: str,
-    kwargs: dict[str, Any],
-    cell_name: str | None,
-    pdk: str | None,
-    out_dir: Path | None,
-    zooms: tuple[tuple[float, float, float, float], ...],
-    zoom_ports: tuple[str, ...],
-    zoom_all_ports: bool,
-    radius: float | None,
-    cuts: tuple[tuple[float, float, float, float], ...],
-    path_specs: tuple[str, ...],
-    layer_spec: str | None,
-    depth: int | None,
-    fill: str,
-    no_ports: bool,
-    size: int,
-    run_checks: bool,
-    min_width: float | None,
-    min_space: float | None,
-    grid: float | None,
-    diff_spec: str | None,
-    as_json: bool,
-) -> None:
-    """Render and analyse SOURCE (file.py:func, file.gds, or a gf expression)."""
+def main(pdk: str | None, **options: Any) -> None:
+    """Render and analyse SOURCE: file.py:func, script.py or - (stdin), file.gds, or a gf expression."""
     activate_pdk(pdk)
-    target = load_target(source, kwargs, cell_name)
+    inspect(**options)
+
+
+def inspect(
+    source: Any,
+    *,
+    kwargs: dict[str, Any] | None = None,
+    cell_name: str | None = None,
+    out_dir: Path | str | None = None,
+    zooms: Sequence[tuple[float, float, float, float]] = (),
+    zoom_ports: Sequence[str] = (),
+    zoom_all_ports: bool = False,
+    radius: float | None = None,
+    cuts: Sequence[tuple[float, float, float, float]] = (),
+    path_specs: Sequence[Any] = (),
+    layer_spec: str | None = None,
+    depth: int | None = None,
+    fill: str = "pdk",
+    no_ports: bool = False,
+    size: int = 1400,
+    run_checks: bool = False,
+    min_width: float | None = None,
+    min_space: float | None = None,
+    grid: float | None = None,
+    diff_spec: str | None = None,
+    as_json: bool = False,
+    quiet: bool = False,
+) -> dict[str, Any]:
+    """Inspect SOURCE and return the summary; the keyword arguments mirror the CLI options.
+
+    SOURCE is a CLI source string or, from Python, a Component, a path or a list of paths.
+    `path_specs` takes CLI spec strings and/or path objects. Errors raise click.ClickException.
+    """
+    import gdsfactory as gf
+
+    try:
+        gf.get_active_pdk()
+    except ValueError:
+        activate_pdk(None)
+    kwargs = kwargs or {}
+    if isinstance(source, str):
+        target = load_target(source, kwargs, cell_name)
+    else:
+        target = _as_target(source, None)
+        source = f"<{type(source).__name__} object>"
+    out_dir = Path(out_dir) if out_dir is not None else None
     out = out_dir or Path("build") / "inspect" / target.name
     out.mkdir(parents=True, exist_ok=True)
 
@@ -1265,7 +1374,7 @@ def main(
     if unknown:
         raise click.ClickException(f"unknown port(s) {unknown}; ports are {sorted(port_names)}")
 
-    paths = load_paths(path_specs, target, source)
+    paths = load_paths(path_specs, target, str(source))
     renderer = Renderer(target, layers, selected, depth, fill, not no_ports, size)
     renderer.paths = paths
     summary: dict[str, Any] = {"cell": cell_section(target), "ports": [p.__dict__ for p in ports]}
@@ -1338,8 +1447,9 @@ def main(
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
     if as_json:
         click.echo(json.dumps(summary, indent=2))
-    else:
+    elif not quiet:
         print_summary(summary)
+    return summary
 
 
 if __name__ == "__main__":
