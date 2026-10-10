@@ -668,22 +668,6 @@ def _hex(color: int) -> str:
     return f"#{color & 0xFFFFFF:06x}"
 
 
-def _nice_step(span: float, target_ticks: int = 7) -> float:
-    raw = span / max(target_ticks, 1)
-    if raw <= 0:
-        return 1.0
-    mag = 10 ** math.floor(math.log10(raw))
-    for m in (1, 2, 2.5, 5, 10):
-        if m * mag >= raw:
-            return m * mag
-    return 10 * mag
-
-
-def _fmt_um(value: float, step: float) -> str:
-    decimals = max(0, -math.floor(math.log10(step)) + (1 if step / 10 ** math.floor(math.log10(step)) == 2.5 else 0))
-    return f"{value:.{decimals}f}"
-
-
 class Renderer:
     """Owns a KLayout LayoutView showing the target cell."""
 
@@ -850,61 +834,60 @@ class Renderer:
 
 
 def _decorate(raw: Path, out: Path, box: Any, title: str, legend: list[LayerEntry], markers: list[MarkerSet]) -> None:
-    """Add µm axes, a title and a layer legend around the KLayout image."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Frame the KLayout image with µm axes, a title and a legend, keeping its pixels 1:1."""
+    import matplotlib
 
-    img = Image.open(raw).convert("RGB")
-    w, h = img.size
-    font = ImageFont.load_default(size=13)
-    small = ImageFont.load_default(size=12)
-    left, top, right, bottom = 70, 26, 16, 30
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    from matplotlib.ticker import MaxNLocator
 
-    items = [(e.label, e.fill, e.frame) for e in legend]
-    items += [(m.label, _hex(m.color), _hex(m.color)) for m in markers if m.polygons]
+    img = plt.imread(raw)
+    h, w = img.shape[:2]
+    dpi = 100
+    left, right, top, bottom, row_h = 72, 16, 28, 40, 20  # px
+
+    handles = [Patch(facecolor=e.fill, edgecolor=e.frame, label=e.label) for e in legend]
+    handles += [Patch(facecolor="none", edgecolor=_hex(m.color), label=m.label) for m in markers if m.polygons]
     full_w = left + w + right
-    rows: list[list[tuple[str, str, str, int]]] = [[]]
-    x = 0
-    for label, fill, frame in items:
-        iw = 18 + int(small.getlength(label)) + 16
-        if x + iw > full_w - 16 and rows[-1]:
-            rows.append([])
-            x = 0
-        rows[-1].append((label, fill, frame, x))
-        x += iw
-    legend_h = 8 + 18 * len(rows) if items else 0
+    ncol, legend_h = 1, 0
+    if handles:
+        # Rough DejaVu Sans width at 9 pt / 100 dpi; only used to choose a column count.
+        item_w = max(34 + 7 * len(str(hd.get_label())) for hd in handles)
+        ncol = max(1, min(len(handles), (full_w - 16) // item_w))
+        legend_h = 6 + row_h * math.ceil(len(handles) / ncol)
+    full_h = top + h + bottom + legend_h
 
-    canvas = Image.new("RGB", (full_w, top + h + bottom + legend_h), "white")
-    canvas.paste(img, (left, top))
-    draw = ImageDraw.Draw(canvas)
-    draw.text((left, 6), f"{title}   [axes in um]", fill="black", font=font)
-    draw.rectangle([left - 1, top - 1, left + w, top + h], outline="black")
-
-    sx = w / box.width()
-    sy = h / box.height()
-    step = _nice_step(box.width())
-    v = math.ceil(box.left / step) * step
-    while v <= box.right + 1e-9:
-        px = left + (v - box.left) * sx
-        draw.line([px, top + h, px, top + h + 5], fill="black")
-        label = _fmt_um(v, step)
-        draw.text((px - small.getlength(label) / 2, top + h + 7), label, fill="black", font=small)
-        v += step
-    step = _nice_step(box.height(), max(3, round(7 * h / w)))
-    v = math.ceil(box.bottom / step) * step
-    while v <= box.top + 1e-9:
-        py = top + h - (v - box.bottom) * sy
-        draw.line([left - 5, py, left - 1, py], fill="black")
-        label = _fmt_um(v, step)
-        draw.text((left - 8 - small.getlength(label), py - 7), label, fill="black", font=small)
-        v += step
-
-    y = top + h + bottom + 4
-    for row in rows:
-        for label, fill, frame, x in row:
-            draw.rectangle([16 + x, y + 2, 16 + x + 12, y + 14], fill=fill, outline=frame)
-            draw.text((16 + x + 18, y + 1), label, fill="black", font=small)
-        y += 18
-    canvas.save(out)
+    # Pin the font: the active style may pick one (e.g. Inter) whose contextual
+    # alternates render "1x2" in cell names as "1×2".
+    with plt.rc_context({"font.family": "DejaVu Sans"}):
+        fig = plt.figure(figsize=(full_w / dpi, full_h / dpi), dpi=dpi, facecolor="white")
+        # Axes exactly w x h px, so the image is drawn without resampling.
+        ax = fig.add_axes((left / full_w, (bottom + legend_h) / full_h, w / full_w, h / full_h))
+        ax.imshow(img, extent=(box.left, box.right, box.bottom, box.top), interpolation="none", aspect="auto")
+        ax.set_xlim(box.left, box.right)
+        ax.set_ylim(box.bottom, box.top)
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=max(3, w // 160)))
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=max(3, h // 120)))
+        ax.tick_params(labelsize=8, length=4)
+        ax.set_title(title, loc="left", fontsize=10, pad=6)
+        ax.set_xlabel("x (µm)", fontsize=8, labelpad=2)
+        ax.set_ylabel("y (µm)", fontsize=8, labelpad=2)
+        if handles:
+            fig.legend(
+                handles=handles,
+                loc="lower left",
+                bbox_to_anchor=(8 / full_w, 2 / full_h),
+                ncol=ncol,
+                frameon=False,
+                fontsize=9,
+                handlelength=1.2,
+                handleheight=1.0,
+                columnspacing=1.2,
+                borderaxespad=0,
+            )
+        fig.savefig(out, dpi=dpi)  # no bbox_inches="tight": it would rescale the image
+        plt.close(fig)
 
 
 # --------------------------------------------------------------------------
