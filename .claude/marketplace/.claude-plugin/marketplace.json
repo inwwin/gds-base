@@ -1,0 +1,14 @@
+{
+  "name": "gds-base",
+  "description": "Project-local plugins for gds-base",
+  "owner": {
+    "name": "Panawat Wongklaew"
+  },
+  "plugins": [
+    {
+      "name": "pixi-pyright",
+      "source": "./plugins/pixi-pyright",
+      "description": "Pyright language server run from the project's pixi environment"
+    }
+  ]
+}
