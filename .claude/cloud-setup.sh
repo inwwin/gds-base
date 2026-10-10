@@ -1,0 +1,76 @@
+#!/bin/bash
+# Cloud environment setup script for inwwin/gds-base.
+# Paste into the environment's "Setup script" field. It pre-downloads the
+# pixi packages into pixi's cache so the SessionStart hook's
+# `pixi install --locked` only has to link them.
+# The embedded pixi.toml is a copy of the repo's; refresh it when that changes.
+set -euo pipefail
+
+if ! command -v pixi >/dev/null 2>&1; then
+  curl -fsSL https://pixi.sh/install.sh | bash
+  export PATH="$HOME/.pixi/bin:$PATH"
+fi
+
+WARM=$(mktemp -d)
+cat > "$WARM/pixi.toml" <<'TOML'
+[workspace]
+authors = ["Panawat Wongklaew <ff22323@bristol.ac.uk>"]
+channels = ["conda-forge"]
+name = "gds-base"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = ">=3.12,<3.15"
+jinja2 = "<4"
+loguru = ">=0.7.3,<0.8"
+matplotlib = "<4"
+numpy = ">=2.5.3,<3"
+orjson = "<4"
+pandas = ">=3.0.6,<4"
+pydantic = ">=2.13.4,<2.14"
+pydantic-settings = ">=2.14.2,<3"
+pydantic-extra-types = ">=2.11.1,<2.12"
+pyyaml = ">=6.0.3,<7"
+qrcode = ">=8.2,<9"
+rectpack = "<1"
+rich = "<16"
+scipy = ">=1.18,<2"
+shapely = "<3"
+toolz = ">=1.1,<2"
+types-pyyaml = ">=6.0.12.20260906,<7"
+typer = ">=0.27.0,<0.28"
+watchdog = "<7"
+freetype-py = ">=2.5.1,<3"
+mapbox_earcut = ">=2.1.0,<3"
+networkx = ">=3.7,<4"
+scikit-image = ">=0.26.0,<0.27"
+trimesh = ">=4.4.1"
+ipykernel = ">=7.4.0,<8"
+attrs = ">=26.1.0,<27"
+python-graphviz = ">=0.21,<0.22"
+pyglet = "<3"
+typing-extensions = ">=4.16.0,<5"
+pygit2 = ">=1.19.3,<2"
+natsort = ">=8.4.0,<9"
+aenum = ">=3.1.17,<4"
+cachetools = ">=7.1.4,<7.2"
+rapidfuzz = ">=3.14.5,<4"
+rectangle-packer = ">=2.1,<3"
+requests = ">=2.34.2,<3"
+"ruamel.yaml" = ">=0.19.1,<0.20"
+semver = ">=3.0.4,<4"
+ipyevents = ">=2.0.4,<2.1"
+ipython = ">=9.15,<9.16"
+ipytree = ">=0.2.2,<0.3"
+ipywidgets = ">=8.1.8,<8.2"
+
+[pypi-dependencies]
+gdsfactory = ">=9.51.0, <10"
+TOML
+
+# Non-critical: a failure here must not block the session from starting
+pixi install --manifest-path "$WARM/pixi.toml" || true
+rm -rf "$WARM"
