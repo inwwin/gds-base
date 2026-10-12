@@ -5,6 +5,12 @@ description: Render and check a gdsfactory component, GDS cell or path with KLay
 
 # component-inspect
 
+Commands below use `pixi run`; in a uv project (`uv.lock`, or a `pyproject.toml`
+without `[tool.pixi]`) use `uv run` instead. If `component-inspect` is not found, the
+`component-inspect` MCP tools are missing, or this is not the gds-base repo, read
+[diagnostic.md](diagnostic.md) first: the project may need component-inspect added
+as a pixi/uv dependency.
+
 Two parts, so a component is loaded once and inspected as often as you like:
 
 - **client**: `pixi run component-inspect load SOURCE` loads the component, prints
@@ -134,7 +140,7 @@ SPEC is one of:
 - `file.py:func` returning a `gf.Path` or a list of them
 - a point list: `0,0;5,5;10,0`
 
-**Quoting** (for `--path` on the command line): `pixi run` re-parses its arguments
+**Quoting** (for `--path` on the command line): `pixi run` (not `uv run`) re-parses its arguments
 and drops single quotes *inside* an argument. Write string literals inside
 expressions with double quotes and wrap the whole argument in single quotes, as in
 `c.ports["o2"]` above. MCP tool arguments need no shell quoting.
@@ -157,9 +163,6 @@ expressions with double quotes and wrap the whole argument in single quotes, as 
 
 ## Troubleshooting
 
-- `cannot reach the component-inspect server`: the MCP server isn't running. Check
-  `/mcp` for `component-inspect`; it listens on
-  `build/component-inspect/.server.sock` (TCP on Windows, port in
-  `build/component-inspect/.server.addr`; override with `COMPONENT_INSPECT_ADDRESS`).
-- `no client '<id>'`: the client exited (closed, crashed, or the server restarted);
-  load again.
+Setup, environment and connection problems (`component-inspect` not found, server not
+connected, `cannot reach the component-inspect server`, `no client '<id>'`, socket
+path errors): see [diagnostic.md](diagnostic.md).
