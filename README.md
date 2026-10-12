@@ -3,7 +3,8 @@
 A default base project for new [gdsfactory](https://gdsfactory.github.io/gdsfactory/)
 layout projects built with an agentic workflow (Claude Code).
 
-This repository is meant to be **forked**, not developed in directly. It has no
+This repository is a **template**: use it to create new projects rather than
+developing in it directly. It has no
 layout code of its own. It provides a locked Python environment and agent tooling,
 so a new photonic or electronic layout project starts with an environment that
 installs itself and an agent that can see and check the geometry it draws.
@@ -23,7 +24,8 @@ installs itself and an agent that can see and check the geometry it draws.
 
 ## Starting a new project
 
-1. **Fork** this repository (or use it as a template) and rename it.
+1. On GitHub, click **Use this template → Create a new repository** (or run
+   `gh repo create <name> --template inwwin/gds-base`).
 2. Edit `pixi.toml`: set `name`, `authors` and `version`, and add any PDKs or extra
    dependencies your project needs. Then refresh the lockfile:
    ```bash
@@ -67,15 +69,18 @@ The repository is set up so that a Claude Code session can, with no manual steps
 A typical loop: describe the component you want, let the agent write it, have it
 inspect and check the result, then review the rendered images and the diff yourself.
 
-## Keeping forks up to date
+## Pulling in template updates
 
-To pull improvements to the base tooling into a fork:
+A repository created from a template starts with its own history, so later
+improvements to the base tooling are not pulled in automatically. To bring them in:
 
 ```bash
 git remote add base https://github.com/inwwin/gds-base.git
 git fetch base
-git merge base/master
+git merge base/master --allow-unrelated-histories   # only the first time
 ```
 
-Conflicts usually come up only in `pixi.toml` and `pixi.lock`. Resolve `pixi.toml` by
+The first merge sees every shared file as added on both sides, so expect conflicts
+across the tooling files; keep the template's version except where your project
+changed it. After that, conflicts usually come up only in `pixi.toml` and `pixi.lock`. Resolve `pixi.toml` by
 hand, then regenerate the lockfile with `pixi install` instead of editing it.
