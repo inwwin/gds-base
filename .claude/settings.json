@@ -21,5 +21,8 @@
   },
   "enabledPlugins": {
     "pixi-pyright@gds-base": true
-  }
+  },
+  "enabledMcpjsonServers": [
+    "component-inspect"
+  ]
 }

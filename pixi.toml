@@ -5,9 +5,6 @@ name = "gds-base"
 platforms = ["linux-64"]
 version = "0.1.0"
 
-[tasks]
-inspect-layout = "python .claude/skills/layout-inspect/scripts/inspect_layout.py"
-
 [dependencies]
 python = ">=3.12,<3.15"
 jinja2 = "<4"
@@ -54,6 +51,9 @@ ipytree = ">=0.2.2,<0.3"
 ipywidgets = ">=8.1.8,<8.2"
 pyright = ">=1.1.414,<2"
 click = ">=8.5.0,<9"
+rpyc = ">=6.0.2,<7"
+mcp = ">=2.3.0,<3"
 
 [pypi-dependencies]
 gdsfactory = ">=9.51.0, <10"
+component-inspect = { path = ".claude/skills/component-inspect", editable = true }
