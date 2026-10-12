@@ -10,8 +10,6 @@ import pytest
 
 from component_inspect.session import InspectSession
 
-gf.gpdk.PDK.activate()
-
 
 @pytest.fixture
 def straight(tmp_path: Path) -> InspectSession:
