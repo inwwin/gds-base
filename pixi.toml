@@ -56,4 +56,7 @@ mcp = ">=2.3.0,<3"
 
 [pypi-dependencies]
 gdsfactory = ">=9.51.0, <10"
-component-inspect = { path = ".claude/skills/component-inspect", editable = true }
+component-inspect = { path = ".claude/skills/component-inspect", editable = true, extras = ["test"] }
+
+[tasks]
+test = "pytest .claude/skills/component-inspect/tests -q"

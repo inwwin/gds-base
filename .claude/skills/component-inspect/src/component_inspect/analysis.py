@@ -80,7 +80,10 @@ def to_dpolygons(region: Any, dbu: float, limit: int = MAX_MARKERS) -> list[Any]
     return out
 
 
-def dbox_tuple(box: Any) -> list[float]:
+def dbox_tuple(box: Any) -> list[float] | None:
+    """[left, bottom, right, top] in µm, or None for an empty box (KLayout's is (1,1;-1,-1))."""
+    if box.empty():
+        return None
     return [round(box.left, 4), round(box.bottom, 4), round(box.right, 4), round(box.top, 4)]
 
 
@@ -107,7 +110,7 @@ def cell_section(target: Target) -> dict[str, Any]:
     data: dict[str, Any] = {
         "name": kc.name,
         "bbox": dbox_tuple(bbox),
-        "size": [round(bbox.width(), 4), round(bbox.height(), 4)],
+        "size": [0.0, 0.0] if bbox.empty() else [round(bbox.width(), 4), round(bbox.height(), 4)],
         "dbu": target.dbu,
     }
     settings = getattr(kc, "settings", None)
@@ -230,6 +233,8 @@ def checks_section(
             markers.focus.append((f"{kind} on {layer}", polys[0].bbox()))
 
     grid_dbu = round(grid / dbu) if grid else 1
+    if grid and (grid_dbu < 1 or abs(grid / dbu - grid_dbu) > 1e-6):
+        raise click.ClickException(f"grid {grid} µm must be a whole multiple of the database unit {dbu} µm")
     for e in layers:
         region = layer_region(target, e.index)
         edges = region.edges()
@@ -271,25 +276,30 @@ def checks_section(
             add("port non-manhattan", p.layer, {"port": p.name, "orientation": p.orientation})
 
         entry = by_name.get(p.layer) or by_ld.get(p.layer)
-        dx, dy = p.direction()
-        # A thin box just inside the port face must be fully covered by the port layer.
-        depth = 2 * dbu
-        cx, cy = p.x - dx * depth / 2, p.y - dy * depth / 2
+        # A thin strip just inside the port face, turned to the port's angle, must be
+        # fully covered by the port layer. An axis-aligned box would stick out of any
+        # port that is not at a multiple of 90 degrees. A rotated face is ragged by about a
+        # dbu from grid snapping, so its strip is deeper and slivers under 2 dbu are ignored.
+        rotated = bool(p.orientation % 90)
+        depth = (6 if rotated else 2) * dbu
         hw = p.width / 2 * 0.98
-        half_w, half_h = (depth / 2, hw) if abs(dx) > abs(dy) else (hw, depth / 2)
-        probe = kdb.DBox(cx - half_w, cy - half_h, cx + half_w, cy + half_h)
+        to_port = kdb.DCplxTrans(1, p.orientation, False, p.x, p.y)
+        probe = to_port * kdb.DPolygon(kdb.DBox(-depth, -hw, 0, hw))
+        marker = to_port * kdb.DPolygon(kdb.DBox(-p.width, -p.width, p.width / 2, p.width))
         if entry is None:
-            add("port layer empty", p.layer, {"port": p.name}, [kdb.DPolygon(probe.enlarged(p.width, p.width))])
+            add("port layer empty", p.layer, {"port": p.name}, [marker])
             continue
         probe_region = kdb.Region(probe.to_itype(dbu))
         uncovered = probe_region - layer_region(target, entry.index)
+        if rotated and uncovered.sized(-1).is_empty():
+            uncovered = kdb.Region()
         if not uncovered.is_empty():
             frac = uncovered.area() / max(probe_region.area(), 1)
             add(
                 "port not on geometry",
                 p.layer,
                 {"port": p.name, "uncovered_fraction": round(frac, 3)},
-                [kdb.DPolygon(probe.enlarged(p.width / 2, p.width / 2))],
+                [marker],
             )
 
     return {"issues": issues, "edge_stats": stats, "passed": not issues}, markers
@@ -369,7 +379,7 @@ def diff_section(target: Target, prev_path: Path, cell_name: str | None) -> tupl
         "ports": port_changes,
         "bbox_before": dbox_tuple(old_bbox),
         "bbox_after": dbox_tuple(target.kcell.dbbox()),
-        "changed_bbox": dbox_tuple(changed_box.to_dtype(dbu)) if not changed_box.empty() else None,
+        "changed_bbox": dbox_tuple(changed_box.to_dtype(dbu)),
     }
     return data, [added, removed], changed_box.to_dtype(dbu) if not changed_box.empty() else None
 

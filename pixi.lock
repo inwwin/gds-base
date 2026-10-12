@@ -368,8 +368,11 @@ environments:
       - pypi: ./.claude/skills/component-inspect
       - pypi: https://files.pythonhosted.org/packages/04/b2/016f89e37ca21bdcd8756f617589b07a423c8bd44b2dd137bd7e74a1adce/gdsfactory-9.51.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/22/0b/3333f70f0a0fff65388e025d4cbf95653dc1a5c8381a2345139d58743a70/klayout-0.30.12-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/26/7e/31b9757d2bd8bc77a23de6db02433598f5aecd84fde686ead66f1ebb2761/kfnetlist-0.3.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/52/ba/74c8e5250dca1489890118c68f9ce02b9a177a18cbaf07d9e6451e5c7cff/kfactory-3.0.4-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/91/2a/b508237a7fcceab8a8724405480eb55d527523419c9dbcde369f954656ad/ruamel.yaml.string-0.1.1-py3-none-any.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
@@ -6104,6 +6107,7 @@ packages:
   - mcp>=2.3,<3
   - pydantic>=2
   - rpyc>=6,<7
+  - pytest>=9.1.1,<10 ; extra == 'test'
   requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/04/b2/016f89e37ca21bdcd8756f617589b07a423c8bd44b2dd137bd7e74a1adce/gdsfactory-9.51.0-py3-none-any.whl
   name: gdsfactory
@@ -6182,6 +6186,26 @@ packages:
   name: klayout
   version: 0.30.12
   sha256: 05a4b2a7aecb938fe433e4b467fae1a82084e20a504fbe954fe811f7877ac3b1
+- pypi: https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl
+  name: pytest
+  version: 9.1.1
+  sha256: 37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
+  requires_dist:
+  - colorama>=0.4 ; sys_platform == 'win32'
+  - exceptiongroup>=1 ; python_full_version < '3.11'
+  - iniconfig>=1.0.1
+  - packaging>=22
+  - pluggy>=1.5,<2
+  - pygments>=2.7.2
+  - tomli>=1 ; python_full_version < '3.11'
+  - argcomplete ; extra == 'dev'
+  - attrs>=19.2 ; extra == 'dev'
+  - hypothesis>=3.56 ; extra == 'dev'
+  - mock ; extra == 'dev'
+  - requests ; extra == 'dev'
+  - setuptools ; extra == 'dev'
+  - xmlschema ; extra == 'dev'
+  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/26/7e/31b9757d2bd8bc77a23de6db02433598f5aecd84fde686ead66f1ebb2761/kfnetlist-0.3.0-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   name: kfnetlist
   version: 0.3.0
@@ -6265,6 +6289,22 @@ packages:
   - kfactory[ipy] ; extra == 'notebooks'
   - nbconvert>=7.17.1,<7.18 ; extra == 'notebooks'
   requires_python: '>=3.12'
+- pypi: https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl
+  name: pluggy
+  version: 1.6.0
+  sha256: e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
+  requires_dist:
+  - pre-commit ; extra == 'dev'
+  - tox ; extra == 'dev'
+  - pytest ; extra == 'testing'
+  - pytest-benchmark ; extra == 'testing'
+  - coverage ; extra == 'testing'
+  requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl
+  name: iniconfig
+  version: 2.3.1
+  sha256: 9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
+  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/91/2a/b508237a7fcceab8a8724405480eb55d527523419c9dbcde369f954656ad/ruamel.yaml.string-0.1.1-py3-none-any.whl
   name: ruamel-yaml-string
   version: 0.1.1

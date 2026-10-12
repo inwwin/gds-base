@@ -6,6 +6,10 @@ import json
 from typing import Any
 
 
+def _box(box: list[float] | None) -> str:
+    return "(empty)" if box is None else str(box)
+
+
 def format_summary(s: dict[str, Any]) -> str:
     """Human-readable text for whichever sections `s` holds; blocks are separated by blank lines."""
     blocks: list[list[str]] = []
@@ -21,7 +25,7 @@ def format_summary(s: dict[str, Any]) -> str:
         cell = s["cell"]
         out = block(
             f"Cell      : {cell['name']}",
-            f"BBox      : {cell['bbox']}  size {cell['size'][0]} x {cell['size'][1]} µm  (dbu {cell['dbu']})",
+            f"BBox      : {_box(cell['bbox'])}  size {cell['size'][0]} x {cell['size'][1]} µm  (dbu {cell['dbu']})",
         )
         if cell.get("settings"):
             out.append(f"Settings  : {json.dumps(cell['settings'])}")
@@ -46,7 +50,7 @@ def format_summary(s: dict[str, Any]) -> str:
 
     if "layers" in s:
         block(
-            "Layers:",
+            "Layers:" if s["layers"] else "Layers:\n  (none)",
             *(
                 f"  {la['layer']:<24} colour {la['fill']}  polygons {la['polygons']:<5}"
                 f" area {la['area_um2']:.4f} µm²  bbox {la['bbox']}"
@@ -97,7 +101,7 @@ def format_summary(s: dict[str, Any]) -> str:
             out.append(f"  {la['layer']:<24} +{la['added_um2']:.4f} / -{la['removed_um2']:.4f} µm²  in {la['bbox']}")
         out += [f"  port {json.dumps(p)}" for p in d["ports"]]
         if d["bbox_before"] != d["bbox_after"]:
-            out.append(f"  bbox {d['bbox_before']} -> {d['bbox_after']}")
+            out.append(f"  bbox {_box(d['bbox_before'])} -> {_box(d['bbox_after'])}")
 
     if s.get("images"):
         block(
