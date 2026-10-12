@@ -217,7 +217,9 @@ class Renderer:
     ) -> dict[str, Any]:
         import klayout.db as kdb
 
-        box = kdb.DBox(box)
+        # Not kdb.DBox(box): KLayout 0.30 resolves that to the integer-Box
+        # overload and rounds every coordinate to a whole µm.
+        box = kdb.DBox(box.left, box.bottom, box.right, box.top)
         if box.width() <= 0 or box.height() <= 0:
             box = box.enlarged(max(box.width(), box.height(), 1.0) / 2 or 0.5)
         # Pick the image size from the box aspect so no pixels are wasted, then
