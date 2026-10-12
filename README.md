@@ -74,7 +74,7 @@ To pull improvements to the base tooling into a fork:
 ```bash
 git remote add base https://github.com/inwwin/gds-base.git
 git fetch base
-git merge base/main
+git merge base/master
 ```
 
 Conflicts usually come up only in `pixi.toml` and `pixi.lock`. Resolve `pixi.toml` by
