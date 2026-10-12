@@ -1,0 +1,8 @@
+{
+  "name": "pixi-pyright",
+  "version": "0.1.0",
+  "description": "Pyright language server run from the project's pixi environment",
+  "author": {
+    "name": "Panawat Wongklaew"
+  }
+}

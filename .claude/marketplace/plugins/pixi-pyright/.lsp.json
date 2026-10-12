@@ -1,0 +1,9 @@
+{
+  "pyright": {
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/pyright-langserver.sh",
+    "extensionToLanguage": {
+      ".py": "python",
+      ".pyi": "python"
+    }
+  }
+}
