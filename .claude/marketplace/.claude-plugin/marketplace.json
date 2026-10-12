@@ -9,11 +9,6 @@
       "name": "pixi-pyright",
       "source": "./plugins/pixi-pyright",
       "description": "Pyright language server run from the project's pixi environment"
-    },
-    {
-      "name": "component-inspect",
-      "source": "./plugins/component-inspect",
-      "description": "MCP server for the component-inspect skill (gdsfactory component rendering and checks)"
     }
   ]
 }

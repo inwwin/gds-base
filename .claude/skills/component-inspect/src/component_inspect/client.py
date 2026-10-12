@@ -120,7 +120,7 @@ def serve_component(
     except (OSError, ConnectionError, ValueError) as exc:
         raise click.ClickException(
             f"cannot reach the component-inspect server ({exc}). It is the `component-inspect` MCP server, "
-            "started by Claude Code from the component-inspect plugin (or run `component-inspect serve`)."
+            "started by Claude Code from the project's .mcp.json (or run `component-inspect serve`)."
         ) from exc
     info = {"name": session.name, "source": session.source, "pid": os.getpid(), "out": str(session.out.resolve())}
     client_id = str(conn.root.register(session.name, json.dumps(info)))

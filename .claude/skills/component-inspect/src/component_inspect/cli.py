@@ -30,7 +30,7 @@ class JsonDictType(click.ParamType):
 def main() -> None:
     """Inspect gdsfactory components with KLayout through an MCP server.
 
-    `serve` runs the MCP server (Claude Code starts it from the component-inspect plugin).
+    `serve` runs the MCP server (Claude Code starts it from the project's .mcp.json).
     `load` loads a component in a long-lived client and prints its client id for the MCP tools.
     """
 

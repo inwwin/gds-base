@@ -32,7 +32,8 @@ INSTRUCTIONS = """\
 Inspect gdsfactory components / GDS cells rendered with KLayout.
 
 1. Load the component in a client process, in the background (it stays alive, holding the
-   loaded cell), and read the `client id:` line it prints:
+   loaded cell), and read the `client id:` line it prints (`uv run` instead of `pixi run`
+   in a uv project):
      pixi run component-inspect load src/ring.py:ring --kwargs '{"radius": 10}'
    SOURCE may also be a .gds file (--cell), a gf expression, or a script (`-` for stdin).
 2. Call these tools with that client_id: summary, overview, zoom, cut, check, diff.
@@ -171,7 +172,7 @@ def build_mcp(registry: Registry) -> MCPServer:
             live = [c.client_id for c in registry.all()]
             raise ToolError(
                 f"no client {client_id!r}; live clients: {live or 'none'}. "
-                "Start one with `pixi run component-inspect load SOURCE` (in the background)."
+                "Start one with `pixi run` (or `uv run`) `component-inspect load SOURCE` (in the background)."
             )
         return found
 
@@ -212,7 +213,7 @@ def build_mcp(registry: Registry) -> MCPServer:
         """List the live clients (loaded components) with their source and output directory."""
         clients = registry.all()
         if not clients:
-            return "no clients; start one with `pixi run component-inspect load SOURCE` (in the background)"
+            return "no clients; start one with `pixi run` (or `uv run`) `component-inspect load SOURCE` (in the background)"
         return "\n".join(
             f"{c.client_id}  source {c.info.get('source')}  out {c.info.get('out')}  pid {c.info.get('pid')}"
             for c in clients
