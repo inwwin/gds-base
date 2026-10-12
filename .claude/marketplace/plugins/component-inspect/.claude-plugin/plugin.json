@@ -1,8 +1,0 @@
-{
-  "name": "component-inspect",
-  "version": "0.1.0",
-  "description": "MCP server for the component-inspect skill: renders, cuts, checks and diffs components loaded by `component-inspect load` clients",
-  "author": {
-    "name": "Panawat Wongklaew"
-  }
-}

@@ -11,17 +11,6 @@
       }
     ]
   },
-  "extraKnownMarketplaces": {
-    "gds-base": {
-      "source": {
-        "source": "directory",
-        "path": "./.claude/marketplace"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "pixi-pyright@gds-base": true
-  },
   "enabledMcpjsonServers": [
     "component-inspect"
   ]

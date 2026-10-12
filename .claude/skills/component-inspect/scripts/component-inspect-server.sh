@@ -2,15 +2,15 @@
 # Start the component-inspect MCP server (stdio) inside the project's pixi or uv environment.
 # stdout carries MCP; pixi/uv and the server log to stderr.
 # The project must have component-inspect as a dependency: see
-# .claude/skills/component-inspect/diagnostic.md.
+# ../diagnostic.md.
 set -euo pipefail
 
 # The pixi and uv installers don't always put them on PATH
 PATH="$PATH:$HOME/.pixi/bin:$HOME/.local/bin:$HOME/.cargo/bin"
 
 # Started from the project's .mcp.json, CLAUDE_PROJECT_DIR may be unset: fall back to
-# the repo root this script sits in (.claude/marketplace/plugins/component-inspect/scripts).
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../../../../.." && pwd)}"
+# the repo root this script sits in (.claude/skills/component-inspect/scripts).
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../../../.." && pwd)}"
 cd "$PROJECT_DIR"  # the server keeps its socket under build/ in the working directory
 
 # Pick the project's environment manager; COMPONENT_INSPECT_RUNNER=pixi|uv overrides.

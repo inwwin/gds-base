@@ -1,7 +1,0 @@
-{
-  "mcpServers": {
-    "component-inspect": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/component-inspect-server.sh"
-    }
-  }
-}

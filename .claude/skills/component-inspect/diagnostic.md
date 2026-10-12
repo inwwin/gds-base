@@ -97,11 +97,27 @@ the user.
 ## 4. Starting the MCP server
 
 The tools (`summary`, `overview`, `zoom`, …) come from the `component-inspect` MCP
-server, which Claude Code starts with
-`.claude/marketplace/plugins/component-inspect/scripts/component-inspect-server.sh`
-(from the `component-inspect` plugin, or from a project `.mcp.json` entry pointing at
-that script). The script runs `pixi run --locked … component-inspect serve` or
+server, which Claude Code starts from the project's `.mcp.json` with
+`scripts/component-inspect-server.sh` (next to this file). The script runs
+`pixi run --locked … component-inspect serve` or
 `uv run [--locked] --project … component-inspect serve` in the project directory.
+
+In a project other than gds-base, with this skill directory copied to
+`.claude/skills/component-inspect`, register the server (ask the user first) in
+`.mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "component-inspect": {
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.claude/skills/component-inspect/scripts/component-inspect-server.sh"
+    }
+  }
+}
+```
+
+and approve it in `.claude/settings.json` with
+`"enabledMcpjsonServers": ["component-inspect"]` (otherwise Claude Code asks once).
 
 - If the server was started before the dependency existed, it failed: reconnect it
   from `/mcp` (or restart Claude Code) after step 3. You cannot restart it yourself;

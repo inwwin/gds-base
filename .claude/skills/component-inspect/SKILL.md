@@ -17,7 +17,7 @@ Two parts, so a component is loaded once and inspected as often as you like:
   `client id: <id>` and its summary, then stays alive holding it. Run it in the
   background (Bash `run_in_background`) and read the id from its output.
 - **server**: the `component-inspect` MCP server (started by Claude Code from the
-  `component-inspect` plugin). Its tools take that `client_id`.
+  project's `.mcp.json`). Its tools take that `client_id`.
 
 Rendering is done by KLayout directly; matplotlib only adds the axes and legend.
 Each request writes PNGs into the client's output directory (default
