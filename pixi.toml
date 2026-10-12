@@ -53,7 +53,11 @@ pyright = ">=1.1.414,<2"
 click = ">=8.5.0,<9"
 rpyc = ">=6.0.2,<7"
 mcp = ">=2.3.0,<3"
+pytest = ">=9.1.1,<10"
 
 [pypi-dependencies]
 gdsfactory = ">=9.51.0, <10"
 component-inspect = { path = ".claude/skills/component-inspect", editable = true }
+
+[tasks]
+test = "pytest .claude/skills/component-inspect/tests -q"
