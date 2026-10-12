@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "component-inspect": {
+      "command": "${CLAUDE_PROJECT_DIR:-.}/.claude/marketplace/plugins/component-inspect/scripts/component-inspect-server.sh"
+    }
+  }
+}

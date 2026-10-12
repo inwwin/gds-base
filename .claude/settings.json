@@ -20,7 +20,9 @@
     }
   },
   "enabledPlugins": {
-    "pixi-pyright@gds-base": true,
-    "component-inspect@gds-base": true
-  }
+    "pixi-pyright@gds-base": true
+  },
+  "enabledMcpjsonServers": [
+    "component-inspect"
+  ]
 }
