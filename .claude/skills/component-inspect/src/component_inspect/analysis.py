@@ -80,7 +80,10 @@ def to_dpolygons(region: Any, dbu: float, limit: int = MAX_MARKERS) -> list[Any]
     return out
 
 
-def dbox_tuple(box: Any) -> list[float]:
+def dbox_tuple(box: Any) -> list[float] | None:
+    """[left, bottom, right, top] in µm, or None for an empty box (KLayout's is (1,1;-1,-1))."""
+    if box.empty():
+        return None
     return [round(box.left, 4), round(box.bottom, 4), round(box.right, 4), round(box.top, 4)]
 
 
@@ -107,7 +110,7 @@ def cell_section(target: Target) -> dict[str, Any]:
     data: dict[str, Any] = {
         "name": kc.name,
         "bbox": dbox_tuple(bbox),
-        "size": [round(bbox.width(), 4), round(bbox.height(), 4)],
+        "size": [0.0, 0.0] if bbox.empty() else [round(bbox.width(), 4), round(bbox.height(), 4)],
         "dbu": target.dbu,
     }
     settings = getattr(kc, "settings", None)
@@ -376,7 +379,7 @@ def diff_section(target: Target, prev_path: Path, cell_name: str | None) -> tupl
         "ports": port_changes,
         "bbox_before": dbox_tuple(old_bbox),
         "bbox_after": dbox_tuple(target.kcell.dbbox()),
-        "changed_bbox": dbox_tuple(changed_box.to_dtype(dbu)) if not changed_box.empty() else None,
+        "changed_bbox": dbox_tuple(changed_box.to_dtype(dbu)),
     }
     return data, [added, removed], changed_box.to_dtype(dbu) if not changed_box.empty() else None
 

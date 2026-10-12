@@ -40,7 +40,9 @@ def load_target(source: str, kwargs: dict[str, Any], cell_name: str | None) -> T
     import gdsfactory as gf
 
     path_part, sep, func_name = source.rpartition(":")
-    if sep and path_part.endswith(".py") and Path(path_part).is_file():
+    if sep and path_part.endswith(".py"):
+        if not Path(path_part).is_file():
+            raise click.ClickException(f"{path_part} does not exist")
         return _load_python(Path(path_part), func_name, kwargs)
     if source == "-" or source.endswith(".py"):
         if kwargs:
@@ -171,7 +173,7 @@ def as_target(obj: Any, name: str | None) -> Target:
         return Target(name=short_name(name or "path"), kcell=empty, source_paths=found)
     if isinstance(obj, gf.ComponentAllAngle):
         flat = gf.Component()
-        flat.name = obj.name
+        flat.name = obj.name or f"flat_{short_name(name or 'all_angle')}"  # an unbuilt one has no name
         kf.VInstance(obj).insert_into_flat(flat, levels=0)
         flat.add_ports(obj.ports)
         obj = flat

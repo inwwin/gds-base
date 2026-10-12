@@ -40,7 +40,9 @@ def _resolve_path_spec(spec: str, target: Target) -> list[Any]:
         return [gf.Path(points)]
 
     path_part, sep, attr = spec.rpartition(":")
-    if sep and path_part.endswith(".py") and Path(path_part).is_file():
+    if sep and path_part.endswith(".py"):
+        if not Path(path_part).is_file():
+            raise click.ClickException(f"path {spec!r}: {path_part} does not exist")
         from .loading import import_attr
 
         obj = import_attr(Path(path_part), attr)
