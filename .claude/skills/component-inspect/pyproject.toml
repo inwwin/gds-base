@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "component-inspect"
+version = "0.1.0"
+description = "Render and check gdsfactory components with KLayout, driven through an MCP server"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8",
+    "gdsfactory>=9.51",
+    "matplotlib",
+    "mcp>=2.3,<3",
+    "pydantic>=2",
+    "rpyc>=6,<7",
+]
+
+[project.scripts]
+component-inspect = "component_inspect.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/component_inspect"]
