@@ -11,12 +11,14 @@ Look at the project root:
 | project has | manager | run commands with |
 | --- | --- | --- |
 | `pixi.toml`, or `pyproject.toml` with a `[tool.pixi.*]` table | pixi | `pixi run component-inspect …` |
-| `uv.lock`, or a `pyproject.toml` without `[tool.pixi.*]` | uv | `uv run component-inspect …` |
+| otherwise: `uv.lock`, or a `pyproject.toml` without `[tool.pixi.*]` | uv | `uv run component-inspect …` |
 
-If both are present, prefer the one the project's README / CLAUDE.md / CI uses. The
-MCP server's start script makes the same choice (pixi first); force it with
-`COMPONENT_INSPECT_RUNNER=pixi` or `=uv` in the server's environment (the `env` field
-of its `.mcp.json` entry).
+The first matching row wins, so pixi takes precedence: a `pixi.toml` next to a
+`pyproject.toml` (with or without `[tool.pixi.*]`) or a `uv.lock` means pixi. The MCP
+server's start script uses the same rule. If the project really is driven by uv
+despite a pixi manifest, use `uv run` and force the server with
+`COMPONENT_INSPECT_RUNNER=uv` (or `=pixi`) in its environment (the `env` field of its
+`.mcp.json` entry).
 
 Everywhere the skill says `pixi run`, use `uv run` in a uv project. Quoting notes
 about `pixi run` re-parsing arguments don't apply to `uv run`, but following them is
