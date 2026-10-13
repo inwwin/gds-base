@@ -5,8 +5,9 @@ description: Render and check a gdsfactory component, GDS cell or path with KLay
 
 # component-inspect
 
-Commands below use `pixi run`; in a uv project (`uv.lock`, or a `pyproject.toml`
-without `[tool.pixi]`) use `uv run` instead. If `component-inspect` is not found, the
+Commands below use `pixi run`; in a uv project (no `pixi.toml`, and a `pyproject.toml`
+without `[tool.pixi]`) use `uv run` instead. A `pixi.toml` means pixi even next to a
+`pyproject.toml` or `uv.lock`. If `component-inspect` is not found, the
 `component-inspect` MCP tools are missing, or this is not the gds-base repo, read
 [diagnostic.md](diagnostic.md) first: the project may need component-inspect added
 as a pixi/uv dependency.
